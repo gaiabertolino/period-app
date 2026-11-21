@@ -1,0 +1,30 @@
+name: CI
+
+# Runs the whole pipeline from a clean checkout on the synthetic sample:
+# validate -> fit -> backtest -> tests (including JS/Python parity).
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check the app's JavaScript parses
+        run: for f in app/js/*.js app/sw.js; do node --check "$f"; done
+      - name: Run pipeline from scratch
+        run: ./run.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-output
+          path: out/

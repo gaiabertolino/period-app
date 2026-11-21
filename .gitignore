@@ -1,0 +1,7 @@
+.venv/
+out/
+__pycache__/
+.pytest_cache/
+.DS_Store
+# Keep real health data out of git. Put your own CSVs here:
+data/private/

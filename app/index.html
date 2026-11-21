@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#f7f2f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1418" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Cycle">
+  <meta name="description" content="On-device cycle prediction. Your data never leaves this device.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/style.css">
+  <title>Cycle</title>
+  <script type="module" src="js/ui.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="view-title">Cycle</h1>
+  </header>
+
+  <main>
+    <!-- Home -->
+    <section id="view-home" class="view" data-title="Cycle">
+      <div class="card hero">
+        <p class="eyebrow">Next period expected</p>
+        <p id="next-date" class="next-date">—</p>
+        <p id="next-range" class="muted"></p>
+        <p id="next-countdown" class="countdown"></p>
+        <p id="regularity" class="pill" hidden></p>
+      </div>
+
+      <div id="home-warnings"></div>
+
+      <div id="reminder-banner" class="banner" hidden>
+        <p id="reminder-banner-text"></p>
+        <div class="row">
+          <button type="button" class="btn small" id="banner-export">Add to Calendar</button>
+          <button type="button" class="btn small ghost" id="banner-dismiss">Later</button>
+        </div>
+      </div>
+
+      <a href="#log" class="btn primary big" id="btn-log">Log period start</a>
+
+      <div class="card stats" id="stats"></div>
+
+      <p class="disclaimer">Not a medical device and not a contraceptive method. Data stays on this device. <a href="#settings">More</a></p>
+    </section>
+
+    <!-- Log -->
+    <section id="view-log" class="view" data-title="Log period start" hidden>
+      <form class="card" id="log-form">
+        <label for="log-date">First day of the period</label>
+        <input type="date" id="log-date" required>
+        <p class="muted small">Defaults to today. You can pick a past date.</p>
+        <div class="row">
+          <button type="submit" class="btn primary">Save</button>
+          <a href="#home" class="btn ghost">Cancel</a>
+        </div>
+      </form>
+    </section>
+
+    <!-- History -->
+    <section id="view-history" class="view" data-title="History" hidden>
+      <p id="history-summary" class="muted"></p>
+      <ul id="history-list" class="list"></ul>
+    </section>
+
+    <!-- Data -->
+    <section id="view-data" class="view" data-title="Data" hidden>
+      <div class="card">
+        <h2>Import CSV</h2>
+        <p class="muted small">One row per period start, header <code>cycle_start_date</code>, dates as <code>YYYY-MM-DD</code>. Extra columns are kept.</p>
+        <fieldset class="radios">
+          <label><input type="radio" name="import-mode" value="merge" checked> Merge with existing dates</label>
+          <label><input type="radio" name="import-mode" value="replace"> Replace all existing dates</label>
+        </fieldset>
+        <label class="btn" for="import-file">Choose CSV file…</label>
+        <input type="file" id="import-file" accept=".csv,text/csv,text/plain" class="visually-hidden">
+        <div id="import-report" class="report" hidden></div>
+      </div>
+
+      <div class="card">
+        <h2>Back up (export CSV)</h2>
+        <p class="muted small">iOS may delete website data that hasn't been used for a while. Export a backup regularly.</p>
+        <div class="row">
+          <button type="button" class="btn" id="export-csv">Download CSV</button>
+          <button type="button" class="btn ghost" id="share-csv" hidden>Share CSV…</button>
+        </div>
+        <p id="persist-status" class="muted small"></p>
+      </div>
+
+      <div class="card">
+        <h2>Calendar reminders</h2>
+        <p class="muted small">Creates an <code>.ics</code> file with the next predicted dates and an alert the day before. Without a server the app can't move these alerts on its own: after you log a new date, export again and re-import the file.</p>
+        <p id="ics-preview" class="muted small"></p>
+        <div class="row">
+          <button type="button" class="btn" id="export-ics">Add to Calendar (.ics)</button>
+          <button type="button" class="btn ghost" id="share-ics" hidden>Share .ics…</button>
+        </div>
+      </div>
+
+      <div class="card danger">
+        <h2>Delete everything</h2>
+        <p class="muted small">Removes all dates and settings from this device. This can't be undone.</p>
+        <button type="button" class="btn danger" id="delete-all">Delete all data</button>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="view-settings" class="view" data-title="Settings" hidden>
+      <form class="card" id="settings-form" novalidate>
+        <label for="set-reminder">Reminder text</label>
+        <input type="text" id="set-reminder" maxlength="80">
+        <p class="muted small">Shown on the lock screen. Keep it discreet.</p>
+
+        <label for="set-level">Credible interval (%)</label>
+        <input type="number" id="set-level" min="50" max="99" step="1" inputmode="numeric">
+
+        <label for="set-n">Cycles to put in the calendar</label>
+        <input type="number" id="set-n" min="1" max="36" step="1" inputmode="numeric">
+
+        <fieldset class="pair">
+          <legend>Cycle lengths used by the model (days)</legend>
+          <label>From <input type="number" id="set-min" min="1" max="365" step="1" inputmode="numeric"></label>
+          <label>to <input type="number" id="set-max" min="2" max="365" step="1" inputmode="numeric"></label>
+        </fieldset>
+        <p class="muted small">Gaps outside this range are probably logging errors or skipped months. They stay in your history but don't count toward the prediction.</p>
+
+        <details>
+          <summary>Advanced: prior</summary>
+          <p class="muted small">Normal-Inverse-Gamma prior on cycle length. The defaults assume about 28 ± 4 days and give way to your own data after a few cycles.</p>
+          <div class="grid2">
+            <label>μ₀ <input type="number" id="set-mu0" step="any" inputmode="decimal"></label>
+            <label>κ₀ <input type="number" id="set-kappa0" step="any" inputmode="decimal"></label>
+            <label>α₀ <input type="number" id="set-alpha0" step="any" inputmode="decimal"></label>
+            <label>β₀ <input type="number" id="set-beta0" step="any" inputmode="decimal"></label>
+          </div>
+        </details>
+
+        <p id="settings-error" class="error" hidden></p>
+        <div class="row">
+          <button type="submit" class="btn primary">Save</button>
+          <button type="button" class="btn ghost" id="settings-reset">Restore defaults</button>
+        </div>
+      </form>
+
+      <div class="card about">
+        <h2>About</h2>
+        <p><strong>Not a medical device. Not a contraceptive method.</strong> These predictions are statistical estimates and must not be used for medical or contraceptive decisions. If you are worried about your cycle, talk to a health professional.</p>
+        <p><strong>Privacy.</strong> There is no server and no account. Your dates are stored only in this browser's storage (IndexedDB) on this device, and the app makes no network requests with your data. Files leave the device only when you export them yourself.</p>
+        <p class="muted small">Open source (MIT). The model is a Bayesian Normal-Inverse-Gamma fit with a Student-t predictive.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Main">
+    <a href="#home" data-tab="home">Home</a>
+    <a href="#history" data-tab="history">History</a>
+    <a href="#data" data-tab="data">Data</a>
+    <a href="#settings" data-tab="settings">Settings</a>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

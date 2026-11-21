@@ -1,0 +1,220 @@
+# Cycle: on-device period prediction
+
+A small Progressive Web App that predicts your next period from the start
+dates you log, with a credible interval. It reminds you the day before through
+your phone's own calendar.
+
+- **No server, no account, no tracking.** Your dates are stored only in your
+  browser's storage (IndexedDB) on your device. The app makes no network
+  requests with your data. Files leave the device only when you export them.
+- **Works offline** once installed, on iPhone, Android or desktop.
+- **Transparent model:** a closed-form Bayesian model (about 150 lines of plain
+  JS) with a matching Python version and a public backtest.
+- **No build step, no dependencies:** plain HTML/CSS/JS modules.
+
+> ⚠️ Not a medical device and not a contraceptive method. See
+> [DISCLAIMER.md](DISCLAIMER.md).
+
+## Privacy (GDPR-friendly by design)
+
+The privacy guarantee comes from the architecture, not from a policy. GitHub
+Pages only serves the static app files. There is no backend that could receive,
+store or process health data. After installation every computation (storage,
+model fit, prediction, `.ics` generation) runs in your phone's browser engine.
+The page also sets a strict Content Security Policy (`default-src 'self'`) and
+loads nothing from third-party servers.
+
+What to know:
+- Browsers can delete site data. iOS can evict data from web apps you haven't
+  opened for a long time, so **export a CSV backup regularly** (Data → Download
+  CSV). The app asks the browser for persistent storage, but the browser may say no.
+- Calendar reminders are created in your calendar app. If your calendar syncs
+  (iCloud, Google), the reminder events sync too. That's why the default event
+  title is a discreet "Personal reminder".
+
+## Install it on an iPhone
+
+1. Open the app's URL in **Safari** (for example `https://<user>.github.io/<repo>/`).
+2. Tap **Share → Add to Home Screen**.
+3. Open it from the Home Screen. It runs full screen and works offline.
+
+On Android/Chrome, use the menu → **Install app**.
+
+## Use it
+
+- **Log period start:** pick the first day (defaults to today; past dates are
+  allowed). The model refits immediately.
+- **History:** edit or delete dates. Gaps outside 15–90 days are marked
+  *not used* (probably a logging error or skipped months) and left out of the
+  model. The thresholds can be changed in Settings.
+- **Data:** import or export the CSV, and export calendar reminders.
+- **Settings:** reminder text, interval level, number of cycles to export,
+  hygiene thresholds, prior parameters.
+
+### Calendar reminders (`.ics`) and their limit
+
+**Add to Calendar** creates an `.ics` file with the next *N* predicted dates
+(default 12). Each is an all-day event with an alert the day before
+(`VALARM`, `TRIGGER:-P1D`). Event UIDs are stable (`cycle-pred-1@cycle-app`,
+`cycle-pred-2@cycle-app`, …) and `SEQUENCE` increases on every export, so a
+calendar that honours UIDs **updates** the events instead of duplicating them.
+
+Structural limit: without a server the app can't change events that are
+already in your calendar. **Every time you log a new date the prediction
+changes, so export and import the file again.** The app shows a banner
+until you do. Calendar apps handle re-imports differently. If you see
+duplicates, delete the old events (or keep the reminders in a dedicated
+calendar you can clear). If you lower *N*, events with higher indexes from
+older exports stay in the calendar until you delete them.
+
+On iPhone, *Add to Calendar* opens the file in the system's "Add events"
+sheet. If that doesn't happen in your iOS version, use **Share .ics…** →
+Save to Files, then open the file from Files.
+
+## CSV format
+
+One row per period start. The header is required and dates are ISO 8601:
+
+```csv
+cycle_start_date
+2021-03-04
+2021-04-01
+2021-04-30
+```
+
+Extra columns (e.g. `period_length`, `notes`) are ignored by the model but
+kept: they are written back on export. An exported CSV can be re-imported
+as is. On import, invalid dates and duplicates are skipped and reported, and
+out-of-range cycle lengths are flagged.
+
+**From Flo:** Flo has no self-service CSV export. Ask support (in-app chat)
+for your data; you'll get JSON or TXT. Then run:
+
+```bash
+python pipeline/parse_flo.py flo_export.json -o data/private/cycles.csv
+python pipeline/validate_csv.py data/private/cycles.csv
+```
+
+The parser is deliberately tolerant because Flo's format isn't documented.
+Check the result against your own records, and adjust `START_KEYS` in
+`parse_flo.py` if needed.
+
+**From Apple Health:** Health → profile → Export All Health Data gives you
+`export.xml`. Menstrual flow records are `HKCategoryTypeIdentifierMenstrualFlow`.
+Take the first day of each run of consecutive days as the start date. A
+converter isn't included yet.
+
+## The model
+
+Let `d_1 < … < d_n` be the logged start dates and `L_i = d_{i+1} − d_i` the
+cycle lengths in days (`m = n − 1` of them). Lengths outside the hygiene
+thresholds (default 15–90) are left out.
+
+Cycle length ~ Normal(μ, σ²) with both μ and σ² unknown, under a conjugate
+Normal-Inverse-Gamma prior `NIG(μ0, κ0, α0, β0)`. The default is weakly
+informative: `μ0 = 28, κ0 = 1, α0 = 2, β0 = 16`, so prior E[σ²] = 16 (≈ ±4
+days). With sample mean `L̄` and `S = Σ(L_i − L̄)²`:
+
+```
+κ_n = κ0 + m
+μ_n = (κ0·μ0 + m·L̄) / κ_n
+α_n = α0 + m/2
+β_n = β0 + S/2 + κ0·m·(L̄ − μ0)² / (2·κ_n)
+```
+
+The posterior predictive for the next length is Student-t with `ν = 2α_n`,
+location `μ_n` and scale `sqrt(β_n (κ_n + 1) / (α_n κ_n))`.
+
+- **Point prediction:** `d_n + round(μ_n)`.
+- **Credible interval** at level `p` (default 80%): `μ_n ± t_{ν,(1+p)/2} · scale`,
+  converted to dates. The t quantile is computed exactly (bisection on the CDF
+  via the regularized incomplete beta function). For `ν ≥ 1000` it falls back to
+  the normal quantile.
+- **With fewer than 2 dates** only the prior is used (`d_n + 28`, a wide
+  interval) and the app says so.
+- **Upcoming cycles** for the calendar: `d_n + round(k · μ_n)`, for k = 1…N.
+
+There's no sampling, so a refit takes well under a millisecond.
+
+The "regular / somewhat irregular / irregular" label uses the posterior
+expected standard deviation `sqrt(β_n / (α_n − 1))`: ≤ 3, ≤ 6 or > 6 days.
+
+Not implemented yet (planned for v1.1): exponential forgetting
+(`w_i = λ^(m−i)`) so that recent cycles count more.
+
+## Reproducibility pipeline (Python)
+
+The same model is implemented in `pipeline/fit_model.py` using only the
+Python standard library. `tests/test_parity.py` runs the app's real
+`model.js` and `csv.js` under Node and checks that both give the same
+parameters and dates on the same CSV.
+
+One command from a fresh clone (needs Python ≥ 3.10; Node ≥ 18 for the parity
+test, which is skipped locally if Node is missing and required in CI):
+
+```bash
+./run.sh                          # synthetic sample
+./run.sh data/private/my.csv      # your own data, stays on your machine
+```
+
+This validates the CSV, fits the model (`out/fit.json`), runs the backtest
+(`out/evaluate.txt`) and runs the tests. `make run`, `make test` and
+`make serve` do the same through make.
+
+| Script | What it does |
+|---|---|
+| `pipeline/fit_model.py` | CSV → posterior parameters + prediction (JSON) |
+| `pipeline/validate_csv.py` | Schema, dates, duplicates, flags abnormal lengths |
+| `pipeline/evaluate.py` | Expanding-window backtest: predict start *i* from starts 1…*i−1*; MAE in days, bias, interval coverage, +28-day baseline |
+| `pipeline/parse_flo.py` | Flo export (JSON/TXT) → canonical CSV |
+| `pipeline/make_synthetic.py` | Regenerates `data/sample_synthetic.csv` (fixed seed, fake data) |
+
+Backtest on the synthetic sample (`./run.sh`):
+
+```
+predictions evaluated : 37 (skipped 3 outlier gaps)
+MAE                   : 1.73 days
+baseline +28d MAE     : 2.00 days
+80% interval          : coverage 86.5%, mean width 6.2 days
+```
+
+Coverage is a bit above nominal because interval ends are rounded to whole
+days. Run it on your own data to see how well the model fits you.
+
+CI (`.github/workflows/ci.yml`) runs the whole pipeline from a clean checkout
+on every push. That is the public proof of reproducibility.
+
+## Run your own copy
+
+- **Use it:** open the published URL and add it to your Home Screen.
+- **Fork it:** fork the repo, then Settings → Pages → Source: *GitHub Actions*.
+  `.github/workflows/pages.yml` publishes `app/` at
+  `https://<you>.github.io/<repo>/`.
+- **Locally:** `make serve` (or `cd app && python3 -m http.server 8000`) and open
+  <http://localhost:8000>. ES modules, IndexedDB and service workers need
+  `http://localhost` or HTTPS. Opening `index.html` as a `file://` URL won't work.
+
+After changing the app's files, bump `VERSION` in `app/sw.js` so installed
+copies fetch the new shell. Cached files are also refreshed in the background
+whenever the app is opened online.
+
+## Repository layout
+
+```
+app/                 the PWA (deployed as-is)
+  index.html  manifest.json  sw.js  css/  icons/
+  js/model.js        NIG fit + Student-t predictive (no imports)
+  js/csv.js          CSV import/export (no imports)
+  js/ics.js          .ics generation
+  js/storage.js      IndexedDB wrapper
+  js/ui.js           screens and wiring
+pipeline/            Python: fit, validate, backtest, Flo parser
+data/                sample_synthetic.csv (put real data in data/private/, git-ignored)
+tests/               pytest suite + Node runner for JS/Python parity
+tools/make_icons.py  draws the icons (standard library only)
+run.sh  Makefile  requirements.txt  .github/workflows/
+```
+
+## License
+
+MIT, see [LICENSE](LICENSE).

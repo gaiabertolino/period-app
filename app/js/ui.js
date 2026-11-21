@@ -1,7 +1,7 @@
 import * as store from './storage.js';
 import { predict, isoToDay, dayToIso, todayDay } from './model.js';
 import { parseCycleCSV, toCSV, DATE_COLUMN } from './csv.js';
-import { buildICS } from './ics.js';
+import { buildICS, buildShortcutPayload, shortcutURL } from './ics.js';
 
 const $ = (sel) => document.querySelector(sel);
 const MS_PER_DAY = 86400000;
@@ -114,8 +114,29 @@ async function markRemindersStale() {
 async function afterDataChange(message) {
   await markRemindersStale();
   await refresh();
-  if (message) toast(message);
+  if (state.settings.shortcutSync && state.result.n_dates) await runShortcut();
+  else if (message) toast(message);
 }
+
+// Opens the user's iOS Shortcut with the new predictions (see SHORTCUT.md).
+async function runShortcut() {
+  const r = state.result;
+  if (!r.n_dates) return toast('Log at least one date first.');
+  const s = await store.getSettings();
+  const payload = buildShortcutPayload(r.upcoming, {
+    summary: s.reminderText, alertDays: s.alertDays, alertTime: s.alertTime,
+  });
+  s.remindersStale = false;
+  s.remindersExported = true;
+  await store.saveSettings(s);
+  await refresh();
+  const a = el('a', { href: shortcutURL(s.shortcutName, payload) });
+  document.body.append(a);
+  a.click();
+  a.remove();
+}
+
+const syncCalendar = () => (state.settings.shortcutSync ? runShortcut() : exportICS(false));
 
 // ---------- rendering ----------
 
@@ -179,7 +200,8 @@ function renderHome() {
   banner.hidden = !s.remindersStale || bannerDismissed;
   $('#reminder-banner-text').textContent = s.remindersExported
     ? 'Prediction updated → update your calendar reminder.'
-    : 'Get an alert the day before: add the predicted dates to your calendar.';
+    : 'Get alerts before your period: add the predicted dates to your calendar.';
+  $('#banner-export').textContent = s.shortcutSync ? 'Sync calendar' : 'Add to Calendar';
 
   const stats = $('#stats');
   stats.hidden = false;
@@ -244,6 +266,7 @@ async function removeDate(date) {
 
 async function renderData() {
   const r = state.result;
+  $('#sync-shortcut').hidden = !state.settings.shortcutSync;
   $('#ics-preview').textContent = r.n_dates
     ? `Next ${r.upcoming.length} predicted dates: ${fmtShort(isoToDay(r.upcoming[0]))} → ${fmtShort(isoToDay(r.upcoming[r.upcoming.length - 1]))}.`
     : 'Log at least one date first.';
@@ -255,6 +278,10 @@ async function renderData() {
 function renderSettingsForm() {
   const s = state.settings;
   $('#set-reminder').value = s.reminderText;
+  $('#set-alert-days').value = s.alertDays.join(', ');
+  $('#set-alert-time').value = s.alertTime;
+  $('#set-shortcut-sync').checked = !!s.shortcutSync;
+  $('#set-shortcut-name').value = s.shortcutName;
   $('#set-level').value = Math.round(s.level * 100);
   $('#set-n').value = s.nPredicted;
   $('#set-min').value = s.minLength;
@@ -300,8 +327,8 @@ async function onLog(event) {
   await store.putCycle({ date: value, extra: {} });
   store.requestPersistence();
   bannerDismissed = false;
-  await afterDataChange('Saved. Prediction updated → update your calendar reminder.');
   location.hash = '#home';
+  await afterDataChange('Saved. Prediction updated → update your calendar reminder.');
 }
 
 async function onImport(event) {
@@ -345,6 +372,7 @@ async function onImport(event) {
     el('p', { class: 'ok' }, `Imported ${plural(parsed.records.length, 'date')}${replace ? ' (replaced existing data)' : ''}. You now have ${plural(r.n_dates, 'date')}.`),
     items.length ? el('ul', {}, items.map((t) => el('li', {}, t))) : null,
   );
+  if (s.shortcutSync && r.n_dates) await runShortcut();
 }
 
 function exportCSV(share) {
@@ -360,7 +388,9 @@ async function exportICS(share) {
   s.remindersStale = false;
   s.remindersExported = true;
   await store.saveSettings(s);
-  const ics = buildICS(r.upcoming, { summary: s.reminderText, sequence: s.icsSequence });
+  const ics = buildICS(r.upcoming, {
+    summary: s.reminderText, sequence: s.icsSequence, alertDays: s.alertDays, alertTime: s.alertTime,
+  });
   await deliver(ics, 'cycle-reminders.ics', 'text/calendar', { share, open: !share && isIOS() });
   await refresh();
 }
@@ -374,8 +404,15 @@ function readSettingsForm() {
   s.minLength = num('#set-min');
   s.maxLength = num('#set-max');
   s.prior = { mu0: num('#set-mu0'), kappa0: num('#set-kappa0'), alpha0: num('#set-alpha0'), beta0: num('#set-beta0') };
+  const alertParts = $('#set-alert-days').value.split(/[,;\s]+/).filter(Boolean);
+  s.alertDays = [...new Set(alertParts.map(Number))].sort((a, b) => b - a);
+  s.alertTime = $('#set-alert-time').value || '09:00';
+  s.shortcutSync = $('#set-shortcut-sync').checked;
+  s.shortcutName = $('#set-shortcut-name').value.trim() || 'Cycle Sync';
 
   const errors = [];
+  if (s.alertDays.some((d) => !Number.isInteger(d) || d < 0 || d > 60)) errors.push('Alert days must be whole numbers from 0 to 60, separated by commas.');
+  if (!/^\d{2}:\d{2}$/.test(s.alertTime)) errors.push('Pick a valid alert time.');
   if (!(s.level >= 0.5 && s.level <= 0.99)) errors.push('Credible interval must be between 50 and 99%.');
   if (!(Number.isInteger(s.nPredicted) && s.nPredicted >= 1 && s.nPredicted <= 36)) errors.push('Cycles in the calendar must be a whole number from 1 to 36.');
   if (!(Number.isInteger(s.minLength) && s.minLength >= 1)) errors.push('Minimum length must be a whole number of at least 1.');
@@ -398,7 +435,9 @@ async function onSaveSettings(event) {
   }
   err.hidden = true;
   const old = state.settings;
-  const predictionChanged = JSON.stringify(modelOptions(old)) !== JSON.stringify(modelOptions(s)) || old.reminderText !== s.reminderText;
+  const predictionChanged = JSON.stringify(modelOptions(old)) !== JSON.stringify(modelOptions(s)) || old.reminderText !== s.reminderText
+    || old.alertDays.join() !== s.alertDays.join() || old.alertTime !== s.alertTime
+    || old.shortcutSync !== s.shortcutSync;
   if (predictionChanged) { s.remindersStale = true; bannerDismissed = false; }
   await store.saveSettings(s);
   await refresh();
@@ -432,7 +471,8 @@ async function init() {
   $('#share-csv').addEventListener('click', () => exportCSV(true));
   $('#export-ics').addEventListener('click', () => exportICS(false));
   $('#share-ics').addEventListener('click', () => exportICS(true));
-  $('#banner-export').addEventListener('click', () => exportICS(false));
+  $('#banner-export').addEventListener('click', syncCalendar);
+  $('#sync-shortcut').addEventListener('click', runShortcut);
   $('#banner-dismiss').addEventListener('click', () => { bannerDismissed = true; $('#reminder-banner').hidden = true; });
   $('#settings-form').addEventListener('submit', onSaveSettings);
   $('#settings-reset').addEventListener('click', onResetSettings);

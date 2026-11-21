@@ -5,7 +5,7 @@
 // whenever the list of files changes. Only the app's own static files are
 // fetched; your data is never sent anywhere.
 
-const VERSION = 'v2';
+const VERSION = 'v4';
 const CACHE = `cycle-app-${VERSION}`;
 const SHELL = [
   './',

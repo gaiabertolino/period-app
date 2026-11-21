@@ -6,6 +6,7 @@
 
 import { DEFAULT_PRIOR, DEFAULT_OPTIONS } from './model.js';
 import { DATE_COLUMN } from './csv.js';
+import { DEFAULT_ALERT_DAYS, DEFAULT_ALERT_TIME } from './ics.js';
 
 const DB_NAME = 'cycle-app';
 const DB_VERSION = 1;
@@ -18,6 +19,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   maxLength: DEFAULT_OPTIONS.maxLength,
   nPredicted: DEFAULT_OPTIONS.nPredicted,
   reminderText: 'Personal reminder',
+  alertDays: [...DEFAULT_ALERT_DAYS],
+  alertTime: DEFAULT_ALERT_TIME,
+  shortcutSync: false,
+  shortcutName: 'Cycle Sync',
   icsSequence: 0,
   csvColumns: [DATE_COLUMN],
   remindersStale: true,

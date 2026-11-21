@@ -28,8 +28,8 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
 
 
 def run_js(*args: str) -> str:
-    out = subprocess.run([NODE, str(RUNNER), *args], capture_output=True, text=True, check=True)
-    return out.stdout
+    out = subprocess.run([NODE, str(RUNNER), *args], capture_output=True, check=True)
+    return out.stdout.decode("utf-8")  # bytes: keep CRLF intact for .ics checks
 
 
 @pytest.mark.parametrize("limit", [0, 1, 2, 3, 5, 17, 30, None])
@@ -73,3 +73,37 @@ def test_csv_roundtrip_quoting(tmp_path):
     src = tmp_path / "q.csv"
     src.write_text('cycle_start_date,notes\n2024-01-01,"a, b"\n2024-01-29,"say ""hi"""\n', encoding="utf-8")
     assert run_js("roundtrip", str(src)) == src.read_text(encoding="utf-8")
+
+
+def test_ics_all_day_events_with_configurable_alerts():
+    out = run_js("ics", "-", json.dumps({"summary": "Personal reminder", "sequence": 4,
+                                         "alertDays": [0, 7, 3], "alertTime": "09:00"}),
+                 "2026-12-01", "2026-12-31")
+    assert out.count("BEGIN:VEVENT") == 2
+    assert "DTSTART;VALUE=DATE:20261201\r\nDTEND;VALUE=DATE:20261202\r\n" in out
+    triggers = [l for l in out.split("\r\n") if l.startswith("TRIGGER:")]
+    assert triggers == ["TRIGGER:-P6DT15H", "TRIGGER:-P2DT15H", "TRIGGER:PT9H"] * 2
+    assert "DESCRIPTION:Personal reminder (in 7 days)" in out
+    assert "UID:cycle-pred-2@cycle-app\r\nSEQUENCE:4" in out
+    # other times and no alerts
+    one = run_js("ics", "-", json.dumps({"alertDays": [1], "alertTime": "20:30"}), "2026-12-01")
+    assert "TRIGGER:-PT3H30M" in one
+    none = run_js("ics", "-", json.dumps({"alertDays": []}), "2026-12-01")
+    assert "VALARM" not in none
+
+
+def test_shortcut_payload():
+    out = run_js("shortcut", "-", json.dumps({"summary": "Personal | reminder", "alertDays": [0, 7, 3],
+                                               "alertTime": "09:00"}), "2026-12-01", "2026-12-31")
+    *lines, url = out.split("\n")
+    assert lines == [
+        # 24 Nov 09:00 is before "now" (25 Nov 12:00), so it is left out
+        "event|2026-12-01|Personal reminder",
+        "alert|2026-11-28 09:00|Personal reminder (in 3 days)",
+        "alert|2026-12-01 09:00|Personal reminder",
+        "event|2026-12-31|Personal reminder",
+        "alert|2026-12-24 09:00|Personal reminder (in 7 days)",
+        "alert|2026-12-28 09:00|Personal reminder (in 3 days)",
+        "alert|2026-12-31 09:00|Personal reminder",
+    ]
+    assert url == "shortcuts://run-shortcut?name=Cycle%20Sync&input=text&text=a%7Cb%0Ac"

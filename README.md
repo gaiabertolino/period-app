@@ -2,7 +2,7 @@
 
 A small Progressive Web App that predicts your next period from the start
 dates you log, with a credible interval. It reminds you the day before through
-your phone's own calendar.
+your phone's own calendar (by default a week before, three days before and on the day).
 
 - **No server, no account, no tracking.** Your dates are stored only in your
   browser's storage (IndexedDB) on your device. The app makes no network
@@ -48,18 +48,26 @@ On Android/Chrome, use the menu → **Install app**.
   *not used* (probably a logging error or skipped months) and left out of the
   model. The thresholds can be changed in Settings.
 - **Data:** import or export the CSV, and export calendar reminders.
-- **Settings:** reminder text, interval level, number of cycles to export,
+- **Settings:** reminder text, calendar alerts (days before + time), interval level, number of cycles to export,
   hygiene thresholds, prior parameters.
 
 ### Calendar reminders (`.ics`) and their limit
 
 **Add to Calendar** creates an `.ics` file with the next *N* predicted dates
-(default 12). Each is an all-day event with an alert the day before
-(`VALARM`, `TRIGGER:-P1D`). Event UIDs are stable (`cycle-pred-1@cycle-app`,
+(default 12). Each is an all-day event with one alert (`VALARM`) per entry in
+Settings → Calendar alerts. The default is 7 days before, 3 days before and on
+the day, all at 09:00 (`TRIGGER:-P6DT15H`, `-P2DT15H`, `PT9H`). Event UIDs are stable (`cycle-pred-1@cycle-app`,
 `cycle-pred-2@cycle-app`, …) and `SEQUENCE` increases on every export, so a
 calendar that honours UIDs **updates** the events instead of duplicating them.
 
-Structural limit: without a server the app can't change events that are
+**Automatic updates on iPhone:** turn on *Update my calendar automatically
+with an iOS Shortcut* in Settings and build the Shortcut once, following
+[SHORTCUT.md](SHORTCUT.md). Every time you save, edit or delete a date, the
+app opens the Shortcut. It replaces the predictions in a dedicated
+**Cycle** calendar and puts the alerts in a **Cycle** Reminders list. All on
+the device.
+
+Without the Shortcut: the app can't change events that are
 already in your calendar. **Every time you log a new date the prediction
 changes, so export and import the file again.** The app shows a banner
 until you do. Calendar apps handle re-imports differently. If you see

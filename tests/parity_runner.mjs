@@ -17,10 +17,27 @@ async function load(name) {
 
 const model = await load('model.js');
 const csv = await load('csv.js');
+const ics = await load('ics.js');
 
 const [mode, file, ...rest] = process.argv.slice(2);
 const flags = {};
 for (let i = 0; i < rest.length; i += 2) flags[rest[i].replace(/^--/, '')] = rest[i + 1];
+
+if (mode === 'ics') {
+  // node parity_runner.mjs ics - '<json options>' date1 date2 ...
+  const opts = JSON.parse(rest[0]);
+  opts.now = new Date('2026-01-01T00:00:00Z');
+  process.stdout.write(ics.buildICS(rest.slice(1), opts));
+  process.exit(0);
+}
+
+if (mode === 'shortcut') {
+  // node parity_runner.mjs shortcut - '<json options>' date1 ...
+  const opts = JSON.parse(rest[0]);
+  opts.now = new Date(2026, 10, 25, 12, 0);  // 25 Nov 2026 12:00 local
+  process.stdout.write(ics.buildShortcutPayload(rest.slice(1), opts) + '\n' + ics.shortcutURL('Cycle Sync', 'a|b\nc'));
+  process.exit(0);
+}
 
 if (mode === 'quantile') {
   // node parity_runner.mjs quantile - p nu

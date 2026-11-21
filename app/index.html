@@ -98,9 +98,10 @@
 
       <div class="card">
         <h2>Calendar reminders</h2>
-        <p class="muted small">Creates an <code>.ics</code> file with the next predicted dates and an alert the day before. Without a server the app can't move these alerts on its own: after you log a new date, export again and re-import the file.</p>
+        <p class="muted small">Creates an <code>.ics</code> file with the next predicted dates as all-day events, with the alerts chosen in Settings. Without a server the app can't move these alerts on its own: after you log a new date, export again and re-import the file.</p>
         <p id="ics-preview" class="muted small"></p>
         <div class="row">
+          <button type="button" class="btn primary" id="sync-shortcut" hidden>Sync calendar now</button>
           <button type="button" class="btn" id="export-ics">Add to Calendar (.ics)</button>
           <button type="button" class="btn ghost" id="share-ics" hidden>Share .ics…</button>
         </div>
@@ -119,6 +120,18 @@
         <label for="set-reminder">Reminder text</label>
         <input type="text" id="set-reminder" maxlength="80">
         <p class="muted small">Shown on the lock screen. Keep it discreet.</p>
+
+        <fieldset class="pair">
+          <legend>Calendar alerts</legend>
+          <label>Days before <input type="text" id="set-alert-days" inputmode="numeric" placeholder="7, 3, 0"></label>
+          <label>At <input type="time" id="set-alert-time"></label>
+        </fieldset>
+        <p class="muted small">Comma-separated, 0 = on the day. Leave empty for no alerts. Events always cover the whole day.</p>
+
+        <label class="check"><input type="checkbox" id="set-shortcut-sync"> Update my calendar automatically with an iOS Shortcut</label>
+        <label for="set-shortcut-name">Shortcut name</label>
+        <input type="text" id="set-shortcut-name" maxlength="60" autocapitalize="off">
+        <p class="muted small">When you save, edit or delete a date, the app opens this Shortcut. It replaces the predictions in your "Cycle" calendar and adds the alerts to your "Cycle" reminders list. Set the Shortcut up once by following <a href="https://github.com/gaiabertolino/period-app/blob/main/SHORTCUT.md" target="_blank" rel="noopener noreferrer">these steps</a>.</p>
 
         <label for="set-level">Credible interval (%)</label>
         <input type="number" id="set-level" min="50" max="99" step="1" inputmode="numeric">

@@ -5,3 +5,5 @@ __pycache__/
 .DS_Store
 # Keep real health data out of git. Put your own CSVs here:
 data/private/
+# Unsigned Shortcut builds (only the signed files are published)
+shortcut/*.unsigned.shortcut

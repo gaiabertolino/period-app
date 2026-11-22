@@ -1,80 +1,55 @@
 # Automatic calendar updates with an iOS Shortcut
 
 A web app can't write to the iPhone Calendar by itself, but Apple's Shortcuts
-app can. You build one Shortcut, once. After that, every time you save, edit
+app can. With the **Cycle Sync** Shortcut installed, every time you save, edit
 or delete a date (or import a CSV), the app opens the Shortcut and passes it
 the new predictions. The Shortcut then:
 
-1. deletes the old predictions from a calendar called **Cycle**;
-2. adds the new predictions there as all-day events;
-3. replaces the alerts in a Reminders list called **Cycle**: by default one
-   week before, three days before and on the day, at 09:00.
+1. deletes the predictions it added last time, and nothing else;
+2. adds the new predictions as **all-day events** in your default calendar;
+3. adds the alerts (by default a week before, three days before and on the
+   day, at 09:00) as **reminders** with an alert, in your default Reminders list.
 
 Alerts go to Reminders because Reminders accept an exact date and time.
-The Shortcuts "Add New Event" action only offers fixed alert presets.
 
-Everything happens on the phone; nothing is sent online. (If the Cycle
-calendar or list is stored in iCloud, iCloud syncs it like any other calendar.
-Pick **On My iPhone** if you don't want that.)
+Everything happens on the device; nothing is sent online. (If your default
+calendar and Reminders list are in iCloud, iCloud syncs them like any other
+event.)
 
-## 1. Create the calendar and the list
+## Install
 
-- **Calendar** app → Calendars → Add Calendar → name it `Cycle`.
-- **Reminders** app → Add List → name it `Cycle`.
+1. On your iPhone, open **[Cycle Sync.shortcut](https://github.com/gaiabertolino/period-app/raw/main/shortcut/Cycle%20Sync.shortcut)**
+   in Safari, then tap **Add Shortcut**. (On a Mac, download it and
+   double-click it. Shortcuts added on a Mac also sync to your iPhone through iCloud.)
+2. In the app: **Settings** → tick **Update my calendar automatically with an
+   iOS Shortcut** → **Save**.
+3. **Data → Sync calendar now** to fill the calendar the first time. iOS may
+   ask "Open in Shortcuts?" (tap Open). The first time, it also asks for
+   access to Calendar and Reminders, and asks you to confirm removing items.
 
-Use these only for the app. The Shortcut deletes whatever is in them.
+## How it only touches its own items (safety)
 
-## 2. Build the Shortcut
+- Everything the Shortcut creates has the note
+  `Added by cycle-app. Updated automatically.` It only ever deletes events
+  and reminders whose notes contain `cycle-app`.
+- Calendar searches are limited to the last 180 and the next 1400 days, as
+  Shortcuts requires.
+- It deletes only when the input starts with a prediction line
+  (`event|…`). An empty or unexpected input deletes nothing.
+- Before removing events, iOS shows a confirmation with the number of items.
+  It should be about the number of predicted cycles (12 by default). **If it
+  shows a number that doesn't make sense, tap Don't Allow.**
 
-Open **Shortcuts** → **+** → name it exactly `Cycle Sync`. (Another name works
-if you also change it in the app's Settings.) Add these actions in order.
-Search for each one by name.
+These rules were checked on macOS with read-only test Shortcuts before the
+delete steps were added (see `tools/make_shortcut.py`).
 
-1. **Receive input**: tap the input placeholder at the top and set
-   *Receive **Text** input*. Set *If there's no input* → **Stop**.
-2. **Find Calendar Events**: Add Filter → *Calendar* is **Cycle**.
-3. **Remove Events**: input: *Calendar Events* from step 2.
-4. **Find Reminders**: Add Filter → *List* is **Cycle**.
-5. **Remove Reminders**: input: *Reminders* from step 4.
-6. **Split Text**: text: *Shortcut Input*; separator: **New Lines**.
-7. **Repeat with Each**: item in *Split Text*. Inside the loop:
-   1. **Split Text**: text: *Repeat Item*; separator: **Custom** → `|`
-   2. **Get Item from List**: **First Item** of *Split Text* →
-      **Set Variable** `Kind`
-   3. **Get Item from List**: **Item At Index** `2` of the same *Split Text* →
-      **Get Dates from Input** → **Set Variable** `When`
-   4. **Get Item from List**: **Last Item** of the same *Split Text* →
-      **Set Variable** `Title`
-   5. **If** `Kind` *is* `event`
-      - **Add New Event**: title `Title`, calendar **Cycle**, turn on
-        **All Day**, Start Date `When`, End Date `When`, alert **None**.
-   6. **Otherwise**
-      - **Add New Reminder**: title `Title`, list **Cycle**, turn on the
-        alert / *Remind Me* option and set it to **At Time** → `When`.
-   7. **End If**
-8. **End Repeat** (added automatically).
-9. Optional: **Show Notification** → `Calendar updated`.
-
-The first time it runs, iOS asks for permission to delete events and
-reminders. Choose **Always Allow**, otherwise it asks every time.
-
-## 3. Turn it on in the app
-
-App → **Settings** → tick **Update my calendar automatically with an iOS
-Shortcut**. Check the Shortcut name, then tap **Save**. Then go to **Data →
-Sync calendar now** to try it. iOS may first ask "Open in Shortcuts?"; tap
-Open. When the Shortcut has finished, switch back to the app.
-
-From then on, saving, editing or deleting a date opens the Shortcut
-automatically. Changing the alert settings shows a banner with a
-**Sync calendar** button.
-
-If you used the `.ics` export before, delete those older events by hand
-once. They aren't in the Cycle calendar, so the Shortcut doesn't touch them.
+`shortcut/Cycle Sync Dry Run.shortcut` runs the same searches but only
+**counts** what would be deleted, without deleting or adding anything.
+Useful if you change something.
 
 ## What the app sends
 
-The Shortcut input is plain text, one item per line:
+Plain text, one item per line:
 
 ```
 event|2026-12-01|Personal reminder
@@ -85,6 +60,15 @@ event|2026-12-31|Personal reminder
 ...
 ```
 
-Alerts that are already in the past are left out. To see exactly what your
-Shortcut receives, add a **Quick Look** action on *Shortcut Input* at the top
-while testing.
+Alerts already in the past are left out.
+
+## Rebuilding the Shortcut
+
+```bash
+python3 tools/make_shortcut.py
+shortcuts sign --mode anyone -i "shortcut/Cycle Sync.unsigned.shortcut" -o "shortcut/Cycle Sync.shortcut"
+shortcuts sign --mode anyone -i "shortcut/Cycle Sync Dry Run.unsigned.shortcut" -o "shortcut/Cycle Sync Dry Run.shortcut"
+```
+
+Signing needs a Mac signed in to iCloud. Signing with `--mode anyone` embeds
+only Apple's certificates and an anonymous ID, not your name or Apple ID.
